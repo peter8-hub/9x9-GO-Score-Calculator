@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="9x9 Go Scorer" />
+<meta name="format-detection" content="telephone=no" />
+<title>9×9 Go Screenshot Scorer — Fixed Pipeline</title>
+<style>
+:root {
+  --bg:#f5f1e8; --panel:#fffdf8; --ink:#171717; --muted:#646464; --line:#e0d4c2;
+  --accent:#1f5f8b; --good:#226b3a; --warn:#8a5b00; --danger:#b63b2e;
+  --board:#d6a75b; --grid:#3f2b14;
+}
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body {
+  margin:0; padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
+  padding-bottom:env(safe-area-inset-bottom); font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background:var(--bg); color:var(--ink); overscroll-behavior:contain;
+}
+header { padding:14px 16px; background:#fffaf1; border-bottom:1px solid var(--line); }
+header h1 { margin:0; font-size:20px; }
+header p { margin:6px 0 0; color:var(--muted); font-size:14px; line-height:1.35; }
+main {
+  max-width:1180px; margin:0 auto; padding:14px; display:grid;
+  grid-template-columns:minmax(320px,590px) minmax(320px,500px); gap:14px; align-items:start;
+}
+@media (max-width:920px) { main { grid-template-columns:1fr; } }
+@media (max-width:520px) {
+  header { padding:12px; } header h1 { font-size:18px; } main { padding:10px; gap:10px; }
+  .panel { padding:10px; border-radius:12px; } .row { gap:6px; }
+  button { padding:9px 10px; font-size:14px; } .scorebox { grid-template-columns:1fr; }
+  .chart th,.chart td { height:30px; font-size:12px; } .big { font-size:26px; }
+}
+.panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.controls { display:grid; gap:12px; }
+label { color:var(--muted); font-size:14px; }
+button,input,select { font:inherit; }
+button {
+  border:1px solid #cfc3b2; background:#fffaf1; border-radius:10px; padding:10px 12px; min-height:44px;
+  cursor:pointer; -webkit-appearance:none; appearance:none; touch-action:manipulation;
+}
+button.active { background:#e3eefc; border-color:var(--accent); color:var(--accent); font-weight:800; }
+button.primary { background:#e3eefc; border-color:var(--accent); color:var(--accent); font-weight:900; }
+button.good { color:var(--good); border-color:#a9d3b8; background:#f2fff6; }
+button.danger { color:var(--danger); border-color:#e0aaa4; background:#fff4f2; }
+input[type="number"], select {
+  min-height:44px; padding:8px; border:1px solid #cfc3b2; border-radius:9px; background:#fff; font-size:16px;
+}
+input[type="number"] { width:92px; }
+input[type="file"] { max-width:100%; min-height:44px; font-size:16px; }
+input[type="range"] { width:100%; min-height:44px; }
+canvas {
+  width:100%; max-height:72vh; object-fit:contain; border:1px solid #cfc3b2; border-radius:10px;
+  background:#eee; display:block; touch-action:manipulation;
+}
+.status {
+  border:1px solid #ead7a8; background:#fff8e6; color:#5b4100; border-radius:10px;
+  padding:10px; font-size:13px; line-height:1.35;
+}
+.help { color:var(--muted); font-size:13px; line-height:1.35; }
+.pipeline { display:grid; gap:7px; }
+.step {
+  display:grid; grid-template-columns:26px 1fr; gap:8px; align-items:start; padding:8px;
+  border:1px solid #eadfce; background:#fffdf9; border-radius:10px; font-size:13px;
+}
+.badge { width:22px; height:22px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:900; background:#eee; color:#555; }
+.step.done .badge { background:#e5f6eb; color:var(--good); }
+.step.fail .badge { background:#fff0ed; color:var(--danger); }
+.step b { display:block; font-size:13px; } .step span { color:var(--muted); }
+.board-wrap {
+  width:100%; aspect-ratio:1/1; background:var(--board); border:2px solid #6b4318; border-radius:10px; padding:8px;
+  box-shadow:inset 0 0 12px rgba(0,0,0,.2); touch-action:manipulation;
+}
+.board { position:relative; width:100%; height:100%; display:grid; grid-template-columns:repeat(9,1fr); grid-template-rows:repeat(9,1fr); }
+.cell {
+  position:relative; display:grid; place-items:center; cursor:pointer; user-select:none;
+  -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+}
+.cell::before,.cell::after { content:""; position:absolute; background:var(--grid); z-index:0; }
+.cell::before { height:1.5px; width:100%; top:50%; left:0; }
+.cell::after { width:1.5px; height:100%; left:50%; top:0; }
+.cell.left::before { left:50%; width:50%; } .cell.right::before { width:50%; }
+.cell.top::after { top:50%; height:50%; } .cell.bottom::after { height:50%; }
+.star { position:absolute; width:7px; height:7px; border-radius:50%; background:var(--grid); z-index:1; pointer-events:none; }
+.stone { position:relative; z-index:2; width:76%; height:76%; border-radius:50%; display:grid; place-items:center; font-weight:900; box-shadow:0 2px 5px rgba(0,0,0,.22); }
+.stone.black { background:radial-gradient(circle at 35% 30%,#444,#050505 72%); color:#fff; }
+.stone.white { background:radial-gradient(circle at 35% 30%,#fff,#d9d9d9 76%); color:#111; border:1px solid #aaa; }
+.stone.dead { outline:3px solid var(--danger); opacity:.65; }
+.mark { position:relative; z-index:1; width:54%; height:54%; border-radius:8px; display:grid; place-items:center; font-weight:900; border:2px dashed rgba(0,0,0,.35); }
+.mark.bterr { color:#fff; background:rgba(0,0,0,.55); } .mark.wterr { color:#111; background:rgba(255,255,255,.75); }
+.mark.neutral { color:#4e3a1e; background:rgba(255,255,255,.22); }
+.chartWrap { overflow-x:auto; border:1px solid #eadfce; border-radius:10px; background:#fff; }
+table.chart { border-collapse:collapse; width:100%; min-width:310px; table-layout:fixed; }
+.chart th,.chart td { border:1px solid #eadfce; text-align:center; width:10%; height:32px; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-weight:800; }
+.chart th { color:#555; background:#fff8eb; font-size:12px; }
+.chart td { cursor:pointer; background:#fff; touch-action:manipulation; }
+.chart td.black { background:#222; color:#fff; } .chart td.white { background:#f3f3f3; color:#111; } .chart td.empty { color:#999; }
+.scorebox { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.scorecard { border:1px solid #e1d7c6; border-radius:12px; padding:12px; background:#fffdf8; }
+.scorecard h2 { margin:0 0 8px; font-size:16px; }
+.big { font-size:30px; font-weight:900; line-height:1; }
+.small { color:var(--muted); font-size:13px; line-height:1.35; margin-top:6px; }
+.winner { padding:12px; border-radius:12px; font-weight:800; text-align:center; background:#f7f7f7; border:1px solid #dedede; }
+details { border-top:1px solid #eee2d2; padding-top:10px; }
+.nojs-warning {
+  border: 2px solid #b63b2e;
+  background: #fff0ed;
+  color: #7a1d14;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+.ready-note {
+  border: 1px solid #a9d3b8;
+  background: #f2fff6;
+  color: #226b3a;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+summary { cursor:pointer; font-weight:700; }
+.diag { white-space:pre-wrap; background:#fff; border:1px solid #eee2d2; border-radius:8px; padding:8px; max-height:260px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:12px; color:#555; }
+</style>
+
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#fffaf1" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+
+</head>
+<body>
+<header>
+  <h1>9×9 Go Screenshot Scorer — Fixed Pipeline</h1>
+  <p>Upload a board screenshot, then tap “Run full pipeline.” The app loads it locally, finds the 9×9 grid, creates a B/W/· chart, detects stones, and calculates a score estimate.</p>
+</header>
+
+<main>
+  <section class="panel controls">
+    <div id="jsWarning" class="nojs-warning">
+      JavaScript has not run. If you see this warning after the page finishes loading, the file is being opened in a preview/webview that blocks scripts. Open the HTML file directly in Safari. Image upload and scoring cannot work without JavaScript.
+    </div>
+    <div id="jsReady" class="ready-note">
+      JavaScript status: not confirmed yet.
+    </div>
+    <div class="status">The blank board and chart are hardcoded below so they appear even before JavaScript runs. Upload a screenshot first, then tap “Run full pipeline.” If grid detection fails, use manual corner mode.</div>
+
+    <div>
+      <label>Converted board preview</label>
+      <div class="board-wrap" style="margin-top:6px;"><div id="board" class="board">
+<div class="cell left top" data-static-r="0" data-static-c="0"></div>
+<div class="cell top" data-static-r="0" data-static-c="1"></div>
+<div class="cell top" data-static-r="0" data-static-c="2"></div>
+<div class="cell top" data-static-r="0" data-static-c="3"></div>
+<div class="cell top" data-static-r="0" data-static-c="4"></div>
+<div class="cell top" data-static-r="0" data-static-c="5"></div>
+<div class="cell top" data-static-r="0" data-static-c="6"></div>
+<div class="cell top" data-static-r="0" data-static-c="7"></div>
+<div class="cell right top" data-static-r="0" data-static-c="8"></div>
+<div class="cell left" data-static-r="1" data-static-c="0"></div>
+<div class="cell" data-static-r="1" data-static-c="1"></div>
+<div class="cell" data-static-r="1" data-static-c="2"></div>
+<div class="cell" data-static-r="1" data-static-c="3"></div>
+<div class="cell" data-static-r="1" data-static-c="4"></div>
+<div class="cell" data-static-r="1" data-static-c="5"></div>
+<div class="cell" data-static-r="1" data-static-c="6"></div>
+<div class="cell" data-static-r="1" data-static-c="7"></div>
+<div class="cell right" data-static-r="1" data-static-c="8"></div>
+<div class="cell left" data-static-r="2" data-static-c="0"></div>
+<div class="cell" data-static-r="2" data-static-c="1"></div>
+<div class="cell" data-static-r="2" data-static-c="2"><div class="star"></div></div>
+<div class="cell" data-static-r="2" data-static-c="3"></div>
+<div class="cell" data-static-r="2" data-static-c="4"></div>
+<div class="cell" data-static-r="2" data-static-c="5"></div>
+<div class="cell" data-static-r="2" data-static-c="6"><div class="star"></div></div>
+<div class="cell" data-static-r="2" data-static-c="7"></div>
+<div class="cell right" data-static-r="2" data-static-c="8"></div>
+<div class="cell left" data-static-r="3" data-static-c="0"></div>
+<div class="cell" data-static-r="3" data-static-c="1"></div>
+<div class="cell" data-static-r="3" data-static-c="2"></div>
+<div class="cell" data-static-r="3" data-static-c="3"></div>
+<div class="cell" data-static-r="3" data-static-c="4"></div>
+<div class="cell" data-static-r="3" data-static-c="5"></div>
+<div class="cell" data-static-r="3" data-static-c="6"></div>
+<div class="cell" data-static-r="3" data-static-c="7"></div>
+<div class="cell right" data-static-r="3" data-static-c="8"></div>
+<div class="cell left" data-static-r="4" data-static-c="0"></div>
+<div class="cell" data-static-r="4" data-static-c="1"></div>
+<div class="cell" data-static-r="4" data-static-c="2"></div>
+<div class="cell" data-static-r="4" data-static-c="3"></div>
+<div class="cell" data-static-r="4" data-static-c="4"><div class="star"></div></div>
+<div class="cell" data-static-r="4" data-static-c="5"></div>
+<div class="cell" data-static-r="4" data-static-c="6"></div>
+<div class="cell" data-static-r="4" data-static-c="7"></div>
+<div class="cell right" data-static-r="4" data-static-c="8"></div>
+<div class="cell left" data-static-r="5" data-static-c="0"></div>
+<div class="cell" data-static-r="5" data-static-c="1"></div>
+<div class="cell" data-static-r="5" data-static-c="2"></div>
+<div class="cell" data-static-r="5" data-static-c="3"></div>
+<div class="cell" data-static-r="5" data-static-c="4"></div>
+<div class="cell" data-static-r="5" data-static-c="5"></div>
+<div class="cell" data-static-r="5" data-static-c="6"></div>
+<div class="cell" data-static-r="5" data-static-c="7"></div>
+<div class="cell right" data-static-r="5" data-static-c="8"></div>
+<div class="cell left" data-static-r="6" data-static-c="0"></div>
+<div class="cell" data-static-r="6" data-static-c="1"></div>
+<div class="cell" data-static-r="6" data-static-c="2"><div class="star"></div></div>
+<div class="cell" data-static-r="6" data-static-c="3"></div>
+<div class="cell" data-static-r="6" data-static-c="4"></div>
+<div class="cell" data-static-r="6" data-static-c="5"></div>
+<div class="cell" data-static-r="6" data-static-c="6"><div class="star"></div></div>
+<div class="cell" data-static-r="6" data-static-c="7"></div>
+<div class="cell right" data-static-r="6" data-static-c="8"></div>
+<div class="cell left" data-static-r="7" data-static-c="0"></div>
+<div class="cell" data-static-r="7" data-static-c="1"></div>
+<div class="cell" data-static-r="7" data-static-c="2"></div>
+<div class="cell" data-static-r="7" data-static-c="3"></div>
+<div class="cell" data-static-r="7" data-static-c="4"></div>
+<div class="cell" data-static-r="7" data-static-c="5"></div>
+<div class="cell" data-static-r="7" data-static-c="6"></div>
+<div class="cell" data-static-r="7" data-static-c="7"></div>
+<div class="cell right" data-static-r="7" data-static-c="8"></div>
+<div class="cell left bottom" data-static-r="8" data-static-c="0"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="1"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="2"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="3"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="4"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="5"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="6"></div>
+<div class="cell bottom" data-static-r="8" data-static-c="7"></div>
+<div class="cell right bottom" data-static-r="8" data-static-c="8"></div>
+      </div></div>
+    </div>
+
+    <div>
+      <label>Image preview and detected grid</label>
+      <canvas id="canvas" style="margin-top:6px;"></canvas>
+      <p class="help"><b>Manual fallback:</b> if auto-grid fails, tap the four outer grid intersections in this order: top-left, top-right, bottom-right, bottom-left.</p>
+    </div>
+  </section>
+
+  <section class="panel controls">
+    <div>
+      <label>Screenshot from Photos / Files</label>
+      <div class="row"><input type="file" id="imageInput" accept="image/*" /></div>
+      <p class="help">Use Safari if possible. Screenshots from Photos work best. After the image loads, tap <b>Run full pipeline</b>. Nothing runs automatically. If the red JavaScript warning stays visible, the page is being opened somewhere that blocks scripts.</p>
+    </div>
+
+    <div class="row">
+      <button id="runPipeline" class="primary" type="button" onclick="manualRunPipelineClick(event)">Run full pipeline</button>
+      <button id="identifyGrid" type="button">1. Identify grid</button>
+      <button id="detectStones" type="button">2. Detect stones</button>
+      <button id="scoreNow" type="button">3. Score</button>
+    </div>
+    <div id="runClickStatus" class="status">Run status: waiting for image upload.</div>
+
+    <div class="row">
+      <button id="manualCorners" type="button">Manual 4-corner grid</button>
+      <button id="presetGrid" type="button">Use blank-board preset</button>
+      <button id="clearAll" type="button" class="danger">Clear</button>
+    </div>
+
+    <div id="status" class="status">Ready. Upload a screenshot, then tap “Run full pipeline.” Nothing runs automatically.</div>
+
+    <div class="pipeline">
+      <div id="stepImage" class="step"><div class="badge">0</div><div><b>Image loaded</b><span>Read screenshot through FileReader and draw it to canvas.</span></div></div>
+      <div id="stepGrid" class="step"><div class="badge">1</div><div><b>Grid identified</b><span>Find a regular 9-line × 9-line board region, not the whole screenshot.</span></div></div>
+      <div id="stepChart" class="step"><div class="badge">2</div><div><b>9×9 chart created</b><span>Map 81 intersections into a simple B / W / · chart.</span></div></div>
+      <div id="stepStones" class="step"><div class="badge">3</div><div><b>Stones detected</b><span>Classify each chart cell as Black, White, or empty.</span></div></div>
+      <div id="stepScore" class="step"><div class="badge">4</div><div><b>Score calculated</b><span>Calculate from the current chart and scoring settings.</span></div></div>
+    </div>
+
+    <div>
+      <label>Simple 9×9 chart from image</label>
+      <div class="chartWrap"><table id="chartTable" class="chart"><thead><tr><th></th><th>A</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F</th><th>G</th><th>H</th><th>I</th></tr></thead><tbody><tr><th>1</th><td class="empty" data-r="0" data-c="0">·</td><td class="empty" data-r="0" data-c="1">·</td><td class="empty" data-r="0" data-c="2">·</td><td class="empty" data-r="0" data-c="3">·</td><td class="empty" data-r="0" data-c="4">·</td><td class="empty" data-r="0" data-c="5">·</td><td class="empty" data-r="0" data-c="6">·</td><td class="empty" data-r="0" data-c="7">·</td><td class="empty" data-r="0" data-c="8">·</td></tr><tr><th>2</th><td class="empty" data-r="1" data-c="0">·</td><td class="empty" data-r="1" data-c="1">·</td><td class="empty" data-r="1" data-c="2">·</td><td class="empty" data-r="1" data-c="3">·</td><td class="empty" data-r="1" data-c="4">·</td><td class="empty" data-r="1" data-c="5">·</td><td class="empty" data-r="1" data-c="6">·</td><td class="empty" data-r="1" data-c="7">·</td><td class="empty" data-r="1" data-c="8">·</td></tr><tr><th>3</th><td class="empty" data-r="2" data-c="0">·</td><td class="empty" data-r="2" data-c="1">·</td><td class="empty" data-r="2" data-c="2">·</td><td class="empty" data-r="2" data-c="3">·</td><td class="empty" data-r="2" data-c="4">·</td><td class="empty" data-r="2" data-c="5">·</td><td class="empty" data-r="2" data-c="6">·</td><td class="empty" data-r="2" data-c="7">·</td><td class="empty" data-r="2" data-c="8">·</td></tr><tr><th>4</th><td class="empty" data-r="3" data-c="0">·</td><td class="empty" data-r="3" data-c="1">·</td><td class="empty" data-r="3" data-c="2">·</td><td class="empty" data-r="3" data-c="3">·</td><td class="empty" data-r="3" data-c="4">·</td><td class="empty" data-r="3" data-c="5">·</td><td class="empty" data-r="3" data-c="6">·</td><td class="empty" data-r="3" data-c="7">·</td><td class="empty" data-r="3" data-c="8">·</td></tr><tr><th>5</th><td class="empty" data-r="4" data-c="0">·</td><td class="empty" data-r="4" data-c="1">·</td><td class="empty" data-r="4" data-c="2">·</td><td class="empty" data-r="4" data-c="3">·</td><td class="empty" data-r="4" data-c="4">·</td><td class="empty" data-r="4" data-c="5">·</td><td class="empty" data-r="4" data-c="6">·</td><td class="empty" data-r="4" data-c="7">·</td><td class="empty" data-r="4" data-c="8">·</td></tr><tr><th>6</th><td class="empty" data-r="5" data-c="0">·</td><td class="empty" data-r="5" data-c="1">·</td><td class="empty" data-r="5" data-c="2">·</td><td class="empty" data-r="5" data-c="3">·</td><td class="empty" data-r="5" data-c="4">·</td><td class="empty" data-r="5" data-c="5">·</td><td class="empty" data-r="5" data-c="6">·</td><td class="empty" data-r="5" data-c="7">·</td><td class="empty" data-r="5" data-c="8">·</td></tr><tr><th>7</th><td class="empty" data-r="6" data-c="0">·</td><td class="empty" data-r="6" data-c="1">·</td><td class="empty" data-r="6" data-c="2">·</td><td class="empty" data-r="6" data-c="3">·</td><td class="empty" data-r="6" data-c="4">·</td><td class="empty" data-r="6" data-c="5">·</td><td class="empty" data-r="6" data-c="6">·</td><td class="empty" data-r="6" data-c="7">·</td><td class="empty" data-r="6" data-c="8">·</td></tr><tr><th>8</th><td class="empty" data-r="7" data-c="0">·</td><td class="empty" data-r="7" data-c="1">·</td><td class="empty" data-r="7" data-c="2">·</td><td class="empty" data-r="7" data-c="3">·</td><td class="empty" data-r="7" data-c="4">·</td><td class="empty" data-r="7" data-c="5">·</td><td class="empty" data-r="7" data-c="6">·</td><td class="empty" data-r="7" data-c="7">·</td><td class="empty" data-r="7" data-c="8">·</td></tr><tr><th>9</th><td class="empty" data-r="8" data-c="0">·</td><td class="empty" data-r="8" data-c="1">·</td><td class="empty" data-r="8" data-c="2">·</td><td class="empty" data-r="8" data-c="3">·</td><td class="empty" data-r="8" data-c="4">·</td><td class="empty" data-r="8" data-c="5">·</td><td class="empty" data-r="8" data-c="6">·</td><td class="empty" data-r="8" data-c="7">·</td><td class="empty" data-r="8" data-c="8">·</td></tr></tbody></table></div>
+      <p class="help">Tap any cell to correct it. Cycle: · → B → W → ·.</p>
+    </div>
+
+    <div>
+      <label>Manual board edit mode</label>
+      <div class="row" id="toolButtons">
+        <button type="button" data-tool="black" class="active">Black</button>
+        <button type="button" data-tool="white">White</button>
+        <button type="button" data-tool="erase">Erase</button>
+        <button type="button" data-tool="dead">Toggle dead</button>
+        <button type="button" data-tool="bterr">Black territory</button>
+        <button type="button" data-tool="wterr">White territory</button>
+        <button type="button" data-tool="neutral">Neutral</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="scoring">Scoring</label>
+      <select id="scoring">
+        <option value="area">Area scoring: living stones + surrounded empty points</option>
+        <option value="territory">Territory scoring: territory + prisoners/dead stones</option>
+        <option value="manual">Manual estimate: marked territory + selected base</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="manualBase">Manual base</label>
+      <select id="manualBase">
+        <option value="area">Area-style: stones + marked territory</option>
+        <option value="territory">Territory-style: marked territory + prisoners/dead stones</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label for="komi">White komi</label>
+      <input id="komi" type="number" step="0.5" value="6.5" />
+      <button id="komi55" type="button">5.5</button><button id="komi65" type="button">6.5</button><button id="komi75" type="button">7.5</button>
+    </div>
+
+    <div>
+      <label>Prisoners already captured during play</label>
+      <div class="row">
+        <span>Black captured White:</span><button id="bpMinus" type="button">−</button><input id="bPrisoners" type="number" min="0" step="1" value="0" /><button id="bpPlus" type="button">+</button>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <span>White captured Black:</span><button id="wpMinus" type="button">−</button><input id="wPrisoners" type="number" min="0" step="1" value="0" /><button id="wpPlus" type="button">+</button>
+      </div>
+    </div>
+
+    <div class="scorebox">
+      <div class="scorecard"><h2>Black</h2><div id="blackScore" class="big">0</div><div id="blackBreakdown" class="small"></div></div>
+      <div class="scorecard"><h2>White</h2><div id="whiteScore" class="big">6.5</div><div id="whiteBreakdown" class="small"></div></div>
+    </div>
+    <div id="winner" class="winner">White leads by 6.5</div>
+
+    <div class="row"><button id="saveLocal" type="button" class="good">Save locally</button><button id="loadLocal" type="button">Load saved</button></div>
+
+    <details>
+      <summary>Detection settings</summary>
+      <div class="controls" style="margin-top:10px;">
+        <div><label for="gridThresh">Grid dark-pixel threshold: <span id="gridThreshVal">145</span></label><input id="gridThresh" type="range" min="90" max="190" value="145" /></div>
+        <div><label for="blackDarkPct">Black if dark-pixel share exceeds: <span id="blackDarkPctVal">0.28</span></label><input id="blackDarkPct" type="range" min="8" max="65" value="28" /></div>
+        <div><label for="whiteThresh">White if brightness exceeds: <span id="whiteThreshVal">165</span></label><input id="whiteThresh" type="range" min="110" max="245" value="165" /></div>
+        <div><label for="whiteSat">White max saturation: <span id="whiteSatVal">0.28</span></label><input id="whiteSat" type="range" min="5" max="65" value="28" /></div>
+        <div><label for="sampleScale">Stone sampling radius: <span id="sampleScaleVal">0.32</span> grid spacing</label><input id="sampleScale" type="range" min="16" max="45" value="32" /></div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Diagnostics / export</summary>
+      <div id="diagnostics" class="diag">JavaScript has not updated diagnostics yet. If this text never changes, scripts are not running in this browser/preview.</div>
+    </details>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const N = 9;
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently:true });
+const boardEl = document.getElementById("board");
+const chartTable = document.getElementById("chartTable");
+const statusEl = document.getElementById("status");
+const diagEl = document.getElementById("diagnostics");
+const runClickStatusEl = document.getElementById("runClickStatus");
+
+let img = null;
+let imgName = "";
+let grid = null;
+let corners = [];
+let manualCornerMode = false;
+let isProcessing = false;
+let tool = "black";
+let diagnostics = [];
+
+let chart = Array.from({length:N}, () => Array(N).fill("."));
+let board = Array.from({length:N}, () => Array.from({length:N}, () => ({stone:null, dead:false, mark:null})));
+const starPoints = new Set(["2,2","2,6","4,4","6,2","6,6"]);
+
+window.addEventListener("error", (event) => {
+  setStatus("Runtime error: " + event.message);
+  diagnostics.push("Runtime error: " + event.message + " at line " + event.lineno + ", col " + event.colno);
+  updateDiagnostics();
+});
+
+function setStatus(text) { statusEl.textContent = text; }
+function setRunStatus(text) {
+  if (runClickStatusEl) runClickStatusEl.textContent = "Run status: " + text;
+}
+function log(text) { diagnostics.push(text); updateDiagnostics(); }
+function updateDiagnostics(extra) {
+  const exportObj = { chart, scoring:document.getElementById("scoring").value, komi:val("komi") };
+  diagEl.textContent = (diagnostics.join("\n") || "No diagnostics yet.") + "\n\nCurrent chart:\n" + chart.map(r => r.join(" ")).join("\n") + "\n\nExport:\n" + JSON.stringify(exportObj, null, 2);
+}
+function step(name, state) {
+  const ids = {image:"stepImage", grid:"stepGrid", chart:"stepChart", stones:"stepStones", score:"stepScore"};
+  const el = document.getElementById(ids[name]);
+  if (!el) return;
+  el.classList.remove("done","fail");
+  if (state === true) el.classList.add("done");
+  if (state === "fail") el.classList.add("fail");
+}
+function resetSteps(afterImage=false) {
+  if (!afterImage) step("image", false);
+  step("grid", false); step("chart", false); step("stones", false); step("score", false);
+}
+function nextFrame() { return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0))); }
+
+function updateSliderLabels() {
+  document.getElementById("gridThreshVal").textContent = document.getElementById("gridThresh").value;
+  document.getElementById("blackDarkPctVal").textContent = (parseInt(document.getElementById("blackDarkPct").value,10)/100).toFixed(2);
+  document.getElementById("whiteThreshVal").textContent = document.getElementById("whiteThresh").value;
+  document.getElementById("whiteSatVal").textContent = (parseInt(document.getElementById("whiteSat").value,10)/100).toFixed(2);
+  document.getElementById("sampleScaleVal").textContent = (parseInt(document.getElementById("sampleScale").value,10)/100).toFixed(2);
+}
+["gridThresh","blackDarkPct","whiteThresh","whiteSat","sampleScale"].forEach(id => document.getElementById(id).addEventListener("input", updateSliderLabels));
+updateSliderLabels();
+
+function fitImageToCanvas(image) {
+  const maxDim = 900; // iPhone-safe processing size; still enough for 9×9 grid detection.
+  let w = image.naturalWidth || image.width;
+  let h = image.naturalHeight || image.height;
+  if (Math.max(w,h) > maxDim) {
+    const s = maxDim / Math.max(w,h);
+    w = Math.round(w*s); h = Math.round(h*s);
+  }
+  canvas.width = Math.max(320, w);
+  canvas.height = Math.max(240, h);
+}
+
+function drawCanvas(overlay=true) {
+  if (!canvas.width || canvas.width < 320) { canvas.width = 720; canvas.height = 520; }
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (!img) {
+    ctx.fillStyle = "#eeeeee"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#666"; ctx.font = "16px system-ui";
+    ctx.fillText("Upload a board screenshot first.", 18, 32);
+    return;
+  }
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  if (!overlay) return;
+
+  ctx.save();
+  if (grid) {
+    ctx.strokeStyle = "rgba(31,95,139,.95)";
+    ctx.lineWidth = 1.4;
+    for (let r=0;r<N;r++) {
+      ctx.beginPath();
+      for (let c=0;c<N;c++) {
+        const p = grid.points[r][c];
+        if (c===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+      }
+      ctx.stroke();
+    }
+    for (let c=0;c<N;c++) {
+      ctx.beginPath();
+      for (let r=0;r<N;r++) {
+        const p = grid.points[r][c];
+        if (r===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+      }
+      ctx.stroke();
+    }
+    const radius = Math.max(5, grid.spacing*0.20);
+    for (let r=0;r<N;r++) {
+      for (let c=0;c<N;c++) {
+        const p = grid.points[r][c], v = chart[r][c];
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = v === "B" ? "#000" : v === "W" ? "#fff" : "rgba(255,196,0,.9)";
+        ctx.fillStyle = v === "B" ? "rgba(0,0,0,.45)" : v === "W" ? "rgba(255,255,255,.55)" : "rgba(255,196,0,.18)";
+        ctx.arc(p.x,p.y,radius,0,Math.PI*2);
+        ctx.fill(); ctx.stroke();
+        if (v !== ".") {
+          ctx.fillStyle = v === "B" ? "#fff" : "#000";
+          ctx.font = "bold 12px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(v, p.x, p.y);
+        }
+      }
+    }
+  }
+
+  const labels = ["TL","TR","BR","BL"];
+  for (let i=0;i<corners.length;i++) {
+    const p = corners[i];
+    ctx.fillStyle = "#1f5f8b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.font = "14px system-ui"; ctx.fillText(labels[i], p.x+9, p.y-9);
+  }
+  ctx.restore();
+}
+
+function renderChart() {
+  let html = "<thead><tr><th></th>";
+  for (let c=0;c<N;c++) html += `<th>${String.fromCharCode(65+c)}</th>`;
+  html += "</tr></thead><tbody>";
+  for (let r=0;r<N;r++) {
+    html += `<tr><th>${r+1}</th>`;
+    for (let c=0;c<N;c++) {
+      const v = chart[r][c], cls = v==="B" ? "black" : v==="W" ? "white" : "empty";
+      html += `<td class="${cls}" data-r="${r}" data-c="${c}">${v==="." ? "·" : v}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody>";
+  chartTable.innerHTML = html;
+  chartTable.querySelectorAll("td").forEach(td => {
+    const cycle = (event) => {
+      if (event) event.preventDefault();
+      const r = parseInt(td.dataset.r,10), c = parseInt(td.dataset.c,10);
+      chart[r][c] = chart[r][c] === "." ? "B" : chart[r][c] === "B" ? "W" : ".";
+      chartToBoard(true); renderChart(); score(); drawCanvas();
+    };
+    let pointerUsed = false;
+    td.addEventListener("pointerup", e => { pointerUsed=true; cycle(e); }, {passive:false});
+    td.addEventListener("click", e => { if (pointerUsed) { pointerUsed=false; return; } cycle(e); }, {passive:false});
+  });
+}
+
+function renderBoard() {
+  boardEl.innerHTML = "";
+  for (let r=0;r<N;r++) {
+    for (let c=0;c<N;c++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      if (c===0) cell.classList.add("left"); if (c===N-1) cell.classList.add("right");
+      if (r===0) cell.classList.add("top"); if (r===N-1) cell.classList.add("bottom");
+      cell.addEventListener("click", () => applyTool(r,c));
+      if (starPoints.has(`${r},${c}`)) {
+        const star = document.createElement("div"); star.className = "star"; cell.appendChild(star);
+      }
+      const p = board[r][c];
+      if (p.stone) {
+        const s = document.createElement("div");
+        s.className = "stone " + (p.stone==="B" ? "black" : "white") + (p.dead ? " dead" : "");
+        s.textContent = p.dead ? "×" : ""; cell.appendChild(s);
+      } else if (p.mark) {
+        const m = document.createElement("div");
+        m.className = "mark " + (p.mark==="BT" ? "bterr" : p.mark==="WT" ? "wterr" : "neutral");
+        m.textContent = p.mark==="BT" ? "B" : p.mark==="WT" ? "W" : "–"; cell.appendChild(m);
+      }
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+function chartToBoard(preserveDead=false) {
+  for (let r=0;r<N;r++) {
+    for (let c=0;c<N;c++) {
+      const oldDead = board[r][c].dead;
+      board[r][c].stone = chart[r][c] === "B" ? "B" : chart[r][c] === "W" ? "W" : null;
+      board[r][c].dead = preserveDead && board[r][c].stone ? oldDead : false;
+      if (board[r][c].stone) board[r][c].mark = null;
+    }
+  }
+  renderBoard();
+}
+function boardToChart() {
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) chart[r][c] = board[r][c].stone || ".";
+  renderChart();
+}
+
+function applyTool(r,c) {
+  const p = board[r][c];
+  if (tool==="black") { p.stone="B"; p.dead=false; p.mark=null; }
+  if (tool==="white") { p.stone="W"; p.dead=false; p.mark=null; }
+  if (tool==="erase") { p.stone=null; p.dead=false; p.mark=null; }
+  if (tool==="dead" && p.stone) p.dead = !p.dead;
+  if (tool==="bterr") { p.stone=null; p.dead=false; p.mark="BT"; }
+  if (tool==="wterr") { p.stone=null; p.dead=false; p.mark="WT"; }
+  if (tool==="neutral") { p.stone=null; p.dead=false; p.mark="N"; }
+  boardToChart(); renderBoard(); score(); drawCanvas();
+}
+function setTool(t) {
+  tool = t;
+  document.querySelectorAll("#toolButtons button").forEach(btn => btn.classList.toggle("active", btn.dataset.tool === t));
+}
+document.querySelectorAll("#toolButtons button").forEach(btn => btn.addEventListener("click", () => setTool(btn.dataset.tool)));
+
+function median(arr) { const a = arr.slice().sort((x,y)=>x-y); return a[Math.floor(a.length/2)] || 1; }
+function lumOf(data, idx) { return 0.2126*data[idx] + 0.7152*data[idx+1] + 0.0722*data[idx+2]; }
+function smooth(arr, radius) {
+  const out = new Array(arr.length);
+  for (let i=0;i<arr.length;i++) {
+    let sum=0, n=0;
+    for (let j=Math.max(0,i-radius); j<=Math.min(arr.length-1,i+radius); j++) { sum += arr[j]; n++; }
+    out[i] = sum/n;
+  }
+  return out;
+}
+function projectionCandidates(scores, minFrac=0.05, maxN=80) {
+  const s = smooth(scores, 1);
+  const maxv = Math.max(...s);
+  if (!isFinite(maxv) || maxv <= 0) return [];
+  const raw = [];
+  for (let i=2;i<s.length-2;i++) {
+    if (s[i] < maxv*minFrac) continue;
+    if (s[i] >= s[i-1] && s[i] >= s[i+1]) {
+      let localMax = true;
+      for (let k=Math.max(0,i-4); k<=Math.min(s.length-1,i+4); k++) {
+        if (s[k] > s[i]) { localMax = false; break; }
+      }
+      if (localMax) raw.push({pos:i, score:s[i]});
+    }
+  }
+  raw.sort((a,b)=>b.score-a.score);
+  const dedup = [];
+  for (const c of raw) {
+    if (!dedup.some(d => Math.abs(d.pos-c.pos) < 6)) dedup.push(c);
+    if (dedup.length >= maxN) break;
+  }
+  return dedup.sort((a,b)=>a.pos-b.pos);
+}
+function pickNineEven(cands, minSpacing, maxSpacing) {
+  if (cands.length < 9) return null;
+  let best = null, bestScore = -Infinity;
+  for (let i=0;i<cands.length;i++) {
+    for (let j=i+8;j<cands.length;j++) {
+      const first = cands[i].pos, last = cands[j].pos;
+      const spacing = (last-first)/8;
+      if (spacing < minSpacing || spacing > maxSpacing) continue;
+      const tol = Math.max(4, spacing*0.13);
+      const seq = [], used = new Set();
+      let score = spacing*5, ok = true;
+      for (let k=0;k<9;k++) {
+        const expected = first + spacing*k;
+        let nearest = null, dist = Infinity;
+        for (const cand of cands) {
+          const d = Math.abs(cand.pos-expected);
+          if (d < dist) { nearest = cand; dist = d; }
+        }
+        if (!nearest || dist > tol || used.has(nearest.pos)) { ok = false; break; }
+        used.add(nearest.pos);
+        seq.push(nearest.pos);
+        score += nearest.score - dist*50;
+      }
+      if (ok && score > bestScore) { bestScore = score; best = {seq, score, spacing}; }
+    }
+  }
+  return best;
+}
+function makeGrid(xs, ys, source) {
+  const points = [];
+  for (let r=0;r<N;r++) {
+    const row = [];
+    for (let c=0;c<N;c++) row.push({x:xs[c], y:ys[r]});
+    points.push(row);
+  }
+  const spacings = [];
+  for (let i=0;i<N-1;i++) { spacings.push(xs[i+1]-xs[i]); spacings.push(ys[i+1]-ys[i]); }
+  return {xs, ys, points, spacing:median(spacings), source};
+}
+function validateGrid(xs, ys) {
+  const boardW = xs[8]-xs[0], boardH = ys[8]-ys[0];
+  const ratio = boardW / Math.max(1, boardH);
+  if (boardW < 160 || boardH < 160) return {ok:false, reason:"Detected grid is too small."};
+  if (ratio < 0.72 || ratio > 1.38) return {ok:false, reason:"Detected grid is not square enough."};
+  if (xs[0] < 0 || ys[0] < 0 || xs[8] > canvas.width || ys[8] > canvas.height) return {ok:false, reason:"Detected grid is outside image bounds."};
+  return {ok:true, reason:"validated"};
+}
+function createEmptyChart() {
+  chart = Array.from({length:N}, () => Array(N).fill("."));
+  renderChart(); chartToBoard(false); step("chart", true);
+}
+
+function getImageDataSafe() {
+  try {
+    drawCanvas(false);
+    return ctx.getImageData(0,0,canvas.width,canvas.height).data;
+  } catch (err) {
+    log("Canvas pixel-read failed: " + (err.message || String(err)));
+    return null;
+  }
+}
+
+function identifyGridAuto() {
+  if (!img) { setStatus("Upload an image first."); step("grid","fail"); return false; }
+  setStatus("Identifying the 9×9 grid inside the screenshot...");
+  const data = getImageDataSafe();
+  if (!data) { step("grid","fail"); return false; }
+
+  const w = canvas.width, h = canvas.height;
+  const gridThresh = parseFloat(document.getElementById("gridThresh").value);
+  const sx = new Array(w).fill(0), sy = new Array(h).fill(0);
+
+  for (let y=0;y<h;y++) {
+    const row = y*w*4;
+    for (let x=0;x<w;x++) {
+      const idx = row + x*4;
+      const lum = lumOf(data, idx);
+      if (lum < gridThresh) {
+        const darkness = gridThresh - lum;
+        sx[x] += 8 + darkness;
+        sy[y] += 8 + darkness;
+      }
+    }
+  }
+
+  const candX = projectionCandidates(sx, 0.05, 90);
+  const candY = projectionCandidates(sy, 0.05, 90);
+  const minSpacing = Math.max(14, Math.min(w,h)*0.025);
+  const maxSpacing = Math.max(40, Math.min(w,h)*0.20);
+  const bx = pickNineEven(candX, minSpacing, maxSpacing);
+  const by = pickNineEven(candY, minSpacing, maxSpacing);
+
+  log("Grid search: X candidates=" + candX.length + ", Y candidates=" + candY.length + ".");
+  log("Best X sequence: " + (bx ? bx.seq.map(v=>Math.round(v)).join(", ") : "not found"));
+  log("Best Y sequence: " + (by ? by.seq.map(v=>Math.round(v)).join(", ") : "not found"));
+
+  if (!bx || !by) {
+    grid = null; step("grid","fail");
+    setStatus("Auto-grid failed. Tap “Manual 4-corner grid,” then tap the four outer grid intersections.");
+    return false;
+  }
+
+  const validation = validateGrid(bx.seq, by.seq);
+  if (!validation.ok) {
+    grid = null; step("grid","fail");
+    log("Grid validation failed: " + validation.reason);
+    setStatus("Auto-grid found a candidate, but it was rejected: " + validation.reason + " Use manual 4-corner grid.");
+    return false;
+  }
+
+  grid = makeGrid(bx.seq, by.seq, "auto-projection");
+  corners = [{x:bx.seq[0],y:by.seq[0]},{x:bx.seq[8],y:by.seq[0]},{x:bx.seq[8],y:by.seq[8]},{x:bx.seq[0],y:by.seq[8]}];
+  manualCornerMode = false;
+  step("grid", true);
+  createEmptyChart();
+  drawCanvas();
+  setStatus("Grid identified and converted into a blank 9×9 chart.");
+  return true;
+}
+
+function usePresetGrid() {
+  if (!img) { setStatus("Upload an image first."); return false; }
+  const aspect = canvas.width / canvas.height;
+  const knownAspect = 1206/1181;
+  if (Math.abs(aspect-knownAspect) > 0.18) {
+    log("Preset warning: uploaded image aspect differs from the blank-board template. Use only if the overlay visibly matches the board.");
+  }
+  const x0 = canvas.width * (78.5/1206), x8 = canvas.width * (1128/1206);
+  const y0 = canvas.height * (57.5/1181), y8 = canvas.height * (1118/1181);
+  const xs = Array.from({length:N}, (_,i)=>x0+(x8-x0)*i/(N-1));
+  const ys = Array.from({length:N}, (_,i)=>y0+(y8-y0)*i/(N-1));
+  grid = makeGrid(xs, ys, "explicit blank-board preset");
+  corners = [{x:x0,y:y0},{x:x8,y:y0},{x:x8,y:y8},{x:x0,y:y8}];
+  manualCornerMode = false;
+  step("grid", true); createEmptyChart(); drawCanvas();
+  setStatus("Preset grid applied. Use this only if the overlay matches the board.");
+  log("Explicit preset grid applied.");
+  return true;
+}
+
+function startManualCorners() {
+  if (!img) { setStatus("Upload an image first."); return; }
+  corners = []; grid = null; manualCornerMode = true;
+  step("grid", false); step("chart", false); step("stones", false); step("score", false);
+  setStatus("Manual mode: tap top-left, top-right, bottom-right, bottom-left outer grid intersections on the image.");
+  drawCanvas();
+}
+function canvasPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return { x:(event.clientX-rect.left)*(canvas.width/rect.width), y:(event.clientY-rect.top)*(canvas.height/rect.height) };
+}
+function makeGridFromCorners() {
+  if (corners.length !== 4) return false;
+  const [tl,tr,br,bl] = corners;
+  const points = [], xs = [], ys = [];
+  for (let r=0;r<N;r++) {
+    const v = r/(N-1), row = [];
+    for (let c=0;c<N;c++) {
+      const u = c/(N-1);
+      row.push({
+        x:(1-u)*(1-v)*tl.x + u*(1-v)*tr.x + u*v*br.x + (1-u)*v*bl.x,
+        y:(1-u)*(1-v)*tl.y + u*(1-v)*tr.y + u*v*br.y + (1-u)*v*bl.y
+      });
+    }
+    points.push(row);
+  }
+  for (let c=0;c<N;c++) xs.push(points[0][c].x);
+  for (let r=0;r<N;r++) ys.push(points[r][0].y);
+  const spacings = [];
+  for (let i=0;i<N-1;i++) { spacings.push(Math.hypot(points[0][i+1].x-points[0][i].x, points[0][i+1].y-points[0][i].y)); spacings.push(Math.hypot(points[i+1][0].x-points[i][0].x, points[i+1][0].y-points[i][0].y)); }
+  grid = {points, xs, ys, spacing:median(spacings), corners:corners.slice(), source:"manual-corners"};
+  manualCornerMode = false;
+  step("grid", true); createEmptyChart(); drawCanvas();
+  setStatus("Manual grid created. Now detecting stones.");
+  log("Manual 4-corner grid created.");
+  return true;
+}
+function handleCanvasTap(event) {
+  if (!img || !manualCornerMode) return;
+  event.preventDefault();
+  if (corners.length >= 4) return;
+  corners.push(canvasPoint(event));
+  const names = ["top-left","top-right","bottom-right","bottom-left"];
+  if (corners.length < 4) setStatus(`Corner ${corners.length} set. Now tap ${names[corners.length]}.`);
+  else {
+    makeGridFromCorners();
+    detectStonesIntoChart();
+  }
+  drawCanvas();
+}
+let canvasPointerUsed = false;
+canvas.addEventListener("pointerup", e => { canvasPointerUsed=true; handleCanvasTap(e); }, {passive:false});
+canvas.addEventListener("click", e => { if (canvasPointerUsed) { canvasPointerUsed=false; return; } handleCanvasTap(e); }, {passive:false});
+
+function sampleStats(cx,cy,radius) {
+  const x0 = Math.max(0,Math.floor(cx-radius)), x1 = Math.min(canvas.width-1,Math.ceil(cx+radius));
+  const y0 = Math.max(0,Math.floor(cy-radius)), y1 = Math.min(canvas.height-1,Math.ceil(cy+radius));
+  const data = ctx.getImageData(x0,y0,x1-x0+1,y1-y0+1).data;
+  const ww = x1-x0+1;
+  let n=0, sumR=0, sumG=0, sumB=0, sumLum=0, sumLum2=0, dark=0, light=0;
+  for (let y=y0;y<=y1;y++) {
+    for (let x=x0;x<=x1;x++) {
+      const dx=x-cx, dy=y-cy;
+      if (dx*dx+dy*dy > radius*radius) continue;
+      const idx = ((y-y0)*ww + (x-x0))*4;
+      const r=data[idx], g=data[idx+1], b=data[idx+2], lum=0.2126*r+0.7152*g+0.0722*b;
+      n++; sumR+=r; sumG+=g; sumB+=b; sumLum+=lum; sumLum2+=lum*lum;
+      if (lum < 105) dark++; if (lum > 185) light++;
+    }
+  }
+  const avgR=sumR/n, avgG=sumG/n, avgB=sumB/n, lum=sumLum/n;
+  const maxRGB=Math.max(avgR,avgG,avgB), minRGB=Math.min(avgR,avgG,avgB);
+  return { lum, sat:maxRGB===0 ? 0 : (maxRGB-minRGB)/maxRGB, std:Math.sqrt(Math.max(0,sumLum2/n-lum*lum)), darkPct:dark/n, lightPct:light/n };
+}
+function classifyStone(s) {
+  const blackDarkPct = parseFloat(document.getElementById("blackDarkPct").value)/100;
+  const whiteThresh = parseFloat(document.getElementById("whiteThresh").value);
+  const whiteSat = parseFloat(document.getElementById("whiteSat").value)/100;
+  if (s.darkPct >= blackDarkPct || (s.lum < 112 && s.darkPct > 0.15)) return "B";
+  if ((s.lum >= whiteThresh && s.sat <= whiteSat && s.lightPct > 0.35) || (s.lightPct > 0.62 && s.sat <= whiteSat+0.08)) return "W";
+  return ".";
+}
+function detectStonesIntoChart() {
+  if (!img) { setStatus("Upload an image first."); return false; }
+  if (!grid) { setStatus("No grid yet. Identify the grid first or use manual corners."); step("stones","fail"); return false; }
+  setStatus("Detecting stones and writing B / W / · into the chart...");
+  try {
+    drawCanvas(false);
+    const radius = Math.max(3, grid.spacing * (parseFloat(document.getElementById("sampleScale").value)/100));
+    let b=0,w=0,e=0;
+    const rows = [];
+    for (let r=0;r<N;r++) {
+      for (let c=0;c<N;c++) {
+        const p = grid.points[r][c];
+        const s = sampleStats(p.x,p.y,radius);
+        const v = classifyStone(s);
+        chart[r][c] = v;
+        if (v==="B") b++; else if (v==="W") w++; else e++;
+        rows.push(`${String.fromCharCode(65+c)}${r+1}: ${v} | lum ${s.lum.toFixed(1)}, sat ${s.sat.toFixed(2)}, dark ${s.darkPct.toFixed(2)}, light ${s.lightPct.toFixed(2)}, std ${s.std.toFixed(1)}`);
+      }
+    }
+    renderChart(); chartToBoard(false); step("stones", true);
+    log(`Detected stones: ${b} Black, ${w} White, ${e} empty. Radius ${radius.toFixed(1)} px. Grid source: ${grid.source}.`);
+    log(rows.join("\n"));
+    score(); drawCanvas();
+    setStatus(`Done: ${b} Black, ${w} White, ${e} empty. Correct chart cells if needed.`);
+    return true;
+  } catch (err) {
+    step("stones","fail");
+    log("Stone detection failed: " + (err.message || String(err)));
+    setStatus("Stone detection failed. Try manual corner grid or adjust detection settings.");
+    return false;
+  }
+}
+
+async function runFullPipeline() {
+  const btn = document.getElementById("runPipeline");
+  setRunStatus("button clicked.");
+  if (isProcessing) {
+    setRunStatus("already processing; wait for the current run to finish.");
+    return;
+  }
+  if (!img) {
+    setStatus("Upload a screenshot first. The run button is working, but there is no loaded image yet.");
+    setRunStatus("no image loaded.");
+    log("Run full pipeline clicked with no loaded image.");
+    updateDiagnostics();
+    return;
+  }
+
+  isProcessing = true;
+  if (btn) btn.disabled = true;
+
+  try {
+    resetSteps(true);
+    setStatus("Running full pipeline: identifying grid...");
+    setRunStatus("started grid detection.");
+    log("Full pipeline started for " + (imgName || "uploaded image") + ".");
+    await nextFrame();
+
+    let ok = false;
+    try {
+      ok = identifyGridAuto();
+    } catch (err) {
+      ok = false;
+      step("grid","fail");
+      log("Grid detection threw an error: " + (err && err.message ? err.message : String(err)));
+      setStatus("Grid detection crashed. Use manual 4-corner grid or check diagnostics.");
+      setRunStatus("grid detection crashed.");
+    }
+    await nextFrame();
+
+    if (!ok) {
+      setStatus("Auto-grid failed. Tap “Manual 4-corner grid,” then tap the four outer grid intersections. The preset is available only as an explicit button.");
+      setRunStatus("auto-grid failed; manual corners needed.");
+      updateDiagnostics();
+      return;
+    }
+
+    setStatus("Grid found. Detecting stones...");
+    setRunStatus("grid found; detecting stones.");
+    await nextFrame();
+
+    let detected = false;
+    try {
+      detected = detectStonesIntoChart();
+    } catch (err) {
+      detected = false;
+      step("stones","fail");
+      log("Stone detection threw an error: " + (err && err.message ? err.message : String(err)));
+      setStatus("Stone detection crashed. Try manual corners or adjust detection settings.");
+      setRunStatus("stone detection crashed.");
+    }
+    await nextFrame();
+
+    if (detected) {
+      score();
+      setStatus("Done. Image → grid → 9×9 chart → stones → score completed. Correct cells if needed.");
+      setRunStatus("completed successfully.");
+      step("score", true);
+      try {
+        chartTable.scrollIntoView({block:"center"});
+      } catch (err) {
+        // Ignore scroll failures in older iOS webviews.
+      }
+    } else {
+      setRunStatus("stone detection failed.");
+    }
+    updateDiagnostics();
+  } finally {
+    isProcessing = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function manualRunPipelineClick(event) {
+  if (event) event.preventDefault();
+  runFullPipeline();
+}
+
+function handleImageFile(file) {
+  if (!file) return;
+  isProcessing = false;
+  resetSteps(false);
+  diagnostics = [];
+  imgName = file.name || "unnamed image";
+  setStatus("Reading image file...");
+  log(`Selected file: ${imgName}; type=${file.type || "unknown"}; size=${file.size || 0} bytes.`);
+  const reader = new FileReader();
+
+  reader.onerror = () => {
+    step("image","fail");
+    setStatus("FileReader failed. Try a normal PNG/JPEG screenshot from Photos.");
+    log("FileReader error.");
+  };
+
+  reader.onload = () => {
+    const image = new Image();
+    image.onload = async () => {
+      img = image;
+      fitImageToCanvas(img);
+      corners = []; grid = null; manualCornerMode = false;
+      chart = Array.from({length:N}, () => Array(N).fill("."));
+      board = Array.from({length:N}, () => Array.from({length:N}, () => ({stone:null, dead:false, mark:null})));
+      renderChart(); renderBoard(); drawCanvas();
+      step("image", true);
+      log(`Image loaded: original ${img.naturalWidth || img.width}×${img.naturalHeight || img.height}; canvas ${canvas.width}×${canvas.height}.`);
+      setStatus("Image loaded. Tap “Run full pipeline” to identify the grid, convert the board to a 9×9 chart, detect stones, and score.");
+      setRunStatus("image loaded; ready to run.");
+      document.getElementById("imageInput").value = ""; // safe here: data URL already decoded into Image.
+      updateDiagnostics();
+    };
+    image.onerror = () => {
+      step("image","fail");
+      setStatus("Image decode failed. Use a PNG/JPEG screenshot; avoid HEIC if Safari cannot decode it.");
+      log("Image decode failed after FileReader completed.");
+    };
+    image.src = reader.result;
+  };
+
+  reader.readAsDataURL(file);
+}
+document.getElementById("imageInput").addEventListener("change", event => {
+  const file = event.target.files && event.target.files[0];
+  handleImageFile(file);
+});
+
+function livingColor(r,c) { const p=board[r][c]; return (!p.stone || p.dead) ? null : p.stone; }
+function neighbors(r,c) { return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([rr,cc]) => rr>=0 && rr<N && cc>=0 && cc<N); }
+function autoEmptyRegions() {
+  const seen = Array.from({length:N}, () => Array(N).fill(false));
+  const result = {BT:0, WT:0, neutral:0};
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
+    if (seen[r][c]) continue;
+    if (livingColor(r,c)) { seen[r][c]=true; continue; }
+    const q=[[r,c]], adj=new Set(); let size=0; seen[r][c]=true;
+    while (q.length) {
+      const [rr,cc] = q.shift(); size++;
+      for (const [nr,nc] of neighbors(rr,cc)) {
+        const col = livingColor(nr,nc);
+        if (col) adj.add(col);
+        else if (!seen[nr][nc]) { seen[nr][nc]=true; q.push([nr,nc]); }
+      }
+    }
+    if (adj.size===1 && adj.has("B")) result.BT += size;
+    else if (adj.size===1 && adj.has("W")) result.WT += size;
+    else result.neutral += size;
+  }
+  return result;
+}
+function countBoard() {
+  const o={blackLive:0,whiteLive:0,blackDead:0,whiteDead:0,manualBT:0,manualWT:0,manualN:0};
+  for (let r=0;r<N;r++) for (let c=0;c<N;c++) {
+    const p=board[r][c];
+    if (p.stone==="B"&&!p.dead) o.blackLive++;
+    if (p.stone==="W"&&!p.dead) o.whiteLive++;
+    if (p.stone==="B"&&p.dead) o.blackDead++;
+    if (p.stone==="W"&&p.dead) o.whiteDead++;
+    if (!p.stone&&p.mark==="BT") o.manualBT++;
+    if (!p.stone&&p.mark==="WT") o.manualWT++;
+    if (!p.stone&&p.mark==="N") o.manualN++;
+  }
+  return o;
+}
+function val(id) { return parseFloat(document.getElementById(id).value) || 0; }
+function fmt(x) { return Number.isInteger(x) ? String(x) : x.toFixed(1); }
+function score() {
+  const scoring = document.getElementById("scoring").value, manualBase = document.getElementById("manualBase").value;
+  const komi = val("komi"), bPrisoners = val("bPrisoners"), wPrisoners = val("wPrisoners");
+  const counts = countBoard(), auto = autoEmptyRegions();
+  let b=0, w=0, bb="", wb="";
+  if (scoring==="area") {
+    b = counts.blackLive + auto.BT;
+    w = counts.whiteLive + auto.WT + komi;
+    bb = `${counts.blackLive} live stones + ${auto.BT} surrounded empty`;
+    wb = `${counts.whiteLive} live stones + ${auto.WT} surrounded empty + ${fmt(komi)} komi`;
+  } else if (scoring==="territory") {
+    b = auto.BT + bPrisoners + counts.whiteDead;
+    w = auto.WT + wPrisoners + counts.blackDead + komi;
+    bb = `${auto.BT} territory + ${bPrisoners} prisoners + ${counts.whiteDead} dead White`;
+    wb = `${auto.WT} territory + ${wPrisoners} prisoners + ${counts.blackDead} dead Black + ${fmt(komi)} komi`;
+  } else if (manualBase==="area") {
+    b = counts.blackLive + counts.manualBT;
+    w = counts.whiteLive + counts.manualWT + komi;
+    bb = `${counts.blackLive} live stones + ${counts.manualBT} marked territory`;
+    wb = `${counts.whiteLive} live stones + ${counts.manualWT} marked territory + ${fmt(komi)} komi`;
+  } else {
+    b = counts.manualBT + bPrisoners + counts.whiteDead;
+    w = counts.manualWT + wPrisoners + counts.blackDead + komi;
+    bb = `${counts.manualBT} marked territory + ${bPrisoners} prisoners + ${counts.whiteDead} dead White`;
+    wb = `${counts.manualWT} marked territory + ${wPrisoners} prisoners + ${counts.blackDead} dead Black + ${fmt(komi)} komi`;
+  }
+  document.getElementById("blackScore").textContent = fmt(b);
+  document.getElementById("whiteScore").textContent = fmt(w);
+  document.getElementById("blackBreakdown").textContent = bb;
+  document.getElementById("whiteBreakdown").textContent = wb;
+  document.getElementById("winner").textContent = b>w ? `Black leads/wins by ${fmt(b-w)}` : w>b ? `White leads/wins by ${fmt(w-b)}` : "Tie";
+  return {black:b, white:w};
+}
+
+const runPipelineButton = document.getElementById("runPipeline");
+let runPointerUsed = false;
+runPipelineButton.addEventListener("pointerup", event => {
+  runPointerUsed = true;
+  manualRunPipelineClick(event);
+}, {passive:false});
+runPipelineButton.addEventListener("click", event => {
+  if (runPointerUsed) {
+    runPointerUsed = false;
+    return;
+  }
+  manualRunPipelineClick(event);
+}, {passive:false});
+document.getElementById("identifyGrid").addEventListener("click", () => { identifyGridAuto(); updateDiagnostics(); });
+document.getElementById("detectStones").addEventListener("click", detectStonesIntoChart);
+document.getElementById("scoreNow").addEventListener("click", () => { score(); step("score", true); setStatus("Score recalculated from the current chart/board."); updateDiagnostics(); });
+document.getElementById("manualCorners").addEventListener("click", startManualCorners);
+document.getElementById("presetGrid").addEventListener("click", () => { usePresetGrid(); updateDiagnostics(); });
+document.getElementById("clearAll").addEventListener("click", () => {
+  img=null; imgName=""; grid=null; corners=[]; manualCornerMode=false; resetSteps(false);
+  chart = Array.from({length:N}, () => Array(N).fill("."));
+  board = Array.from({length:N}, () => Array.from({length:N}, () => ({stone:null, dead:false, mark:null})));
+  diagnostics=[]; renderChart(); renderBoard(); drawCanvas(); score(); setStatus("Cleared."); setRunStatus("waiting for image upload.");
+});
+["scoring","manualBase","komi","bPrisoners","wPrisoners"].forEach(id => {
+  document.getElementById(id).addEventListener("input", () => { score(); updateDiagnostics(); });
+  document.getElementById(id).addEventListener("change", () => { score(); updateDiagnostics(); });
+});
+document.getElementById("komi55").addEventListener("click", () => { document.getElementById("komi").value=5.5; score(); });
+document.getElementById("komi65").addEventListener("click", () => { document.getElementById("komi").value=6.5; score(); });
+document.getElementById("komi75").addEventListener("click", () => { document.getElementById("komi").value=7.5; score(); });
+function inc(id,d) { const el=document.getElementById(id); el.value=Math.max(0,(parseInt(el.value||"0",10)||0)+d); score(); updateDiagnostics(); }
+document.getElementById("bpMinus").addEventListener("click", () => inc("bPrisoners",-1));
+document.getElementById("bpPlus").addEventListener("click", () => inc("bPrisoners",1));
+document.getElementById("wpMinus").addEventListener("click", () => inc("wPrisoners",-1));
+document.getElementById("wpPlus").addEventListener("click", () => inc("wPrisoners",1));
+
+function serializeState() {
+  return {chart, board, scoring:document.getElementById("scoring").value, manualBase:document.getElementById("manualBase").value, komi:document.getElementById("komi").value, bPrisoners:document.getElementById("bPrisoners").value, wPrisoners:document.getElementById("wPrisoners").value};
+}
+document.getElementById("saveLocal").addEventListener("click", () => {
+  try { localStorage.setItem("go9_fixed_scorer_state", JSON.stringify(serializeState())); setStatus("Saved locally."); }
+  catch(e) { setStatus("Could not save locally. Private browsing may block storage."); }
+});
+document.getElementById("loadLocal").addEventListener("click", () => {
+  try {
+    const raw = localStorage.getItem("go9_fixed_scorer_state");
+    if (!raw) { setStatus("No saved board found."); return; }
+    const s = JSON.parse(raw);
+    chart=s.chart||chart; board=s.board||board;
+    document.getElementById("scoring").value=s.scoring||"area";
+    document.getElementById("manualBase").value=s.manualBase||"area";
+    document.getElementById("komi").value=s.komi||"6.5";
+    document.getElementById("bPrisoners").value=s.bPrisoners||"0";
+    document.getElementById("wPrisoners").value=s.wPrisoners||"0";
+    renderChart(); renderBoard(); score(); updateDiagnostics(); setStatus("Loaded saved board.");
+  } catch(e) { setStatus("Saved board could not be loaded."); }
+});
+
+renderBoard(); renderChart(); drawCanvas(); score(); setRunStatus("waiting for image upload."); updateDiagnostics();
+const jsWarningEl = document.getElementById("jsWarning");
+const jsReadyEl = document.getElementById("jsReady");
+if (jsWarningEl) jsWarningEl.style.display = "none";
+if (jsReadyEl) jsReadyEl.textContent = "JavaScript is running. Upload an image, then tap Run full pipeline.";
+</script>
+
+<script>
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function (err) {
+      console.log("Service worker registration failed:", err);
+    });
+  });
+}
+</script>
+
+</body>
+</html>
