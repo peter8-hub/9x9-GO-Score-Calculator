@@ -1,25 +1,48 @@
 # 9x9 Go Screenshot Scorer
 
-This is a static, browser-only web app. It does not need a backend.
+Static browser-only 9x9 Go screenshot scorer.
 
-## Files
+## Current scoring layer
 
-- `index.html` — the app
-- `manifest.json` — install metadata for phone/home-screen use
-- `sw.js` — offline cache when hosted over HTTPS
-- `icon-192.png` / `icon-512.png` — app icons
+The app keeps Territory scoring as the default and includes a simple scoring-validation/test layer. It does not include a full Go engine, tactical life-and-death solver, automatic seki solver, or move-search logic.
 
-## Best phone setup
+### Territory scoring
 
-Host this folder as a static website, open the URL in Safari on iPhone, then use:
+Black = black territory + White stones captured by Black during play + dead White stones marked on board.
 
-Share → Add to Home Screen → Add
+White = white territory + Black stones captured by White during play + dead Black stones marked on board + komi.
 
-## Recommended static hosts
+### Area scoring
 
-- GitHub Pages
-- Netlify
-- Cloudflare Pages
-- Vercel
+Black = live Black stones + Black controlled empty points.
 
-For iPhone install/offline behavior, use an HTTPS URL. Local file previews may block JavaScript.
+White = live White stones + White controlled empty points + komi.
+
+Prisoners are ignored in Area scoring.
+
+## Developer scoring tests
+
+Open the app in a browser and run this in the console:
+
+```js
+runScoringTests()
+```
+
+Or open Menu → Advanced → Diagnostics and click **Run scoring tests**.
+
+The test suite covers:
+
+- Empty board with komi only
+- Simple Black territory
+- Simple White territory
+- Neutral/dame region touching both colors
+- Dead White stone/group inside Black territory
+- Dead Black stone/group inside White territory
+- Territory scoring with prisoner input
+- Area scoring where prisoners are ignored
+- Manual dead-stone marking changes score correctly
+- Group in atari is warned but not automatically removed
+
+## Deployment
+
+Upload all files to the root of the GitHub repository and publish through GitHub Pages.
